@@ -50,14 +50,6 @@ export type Lift = {
   createdAt: number;
 };
 
-export type BodyLog = {
-  id: string;
-  weight: number;
-  bodyFat?: number;
-  waist?: number;
-  createdAt: number;
-};
-
 export type HabitKey = "training" | "deepWork" | "noSpend";
 export type Habit = { streak: number; completedToday: boolean; lastCompletedDate?: string | null };
 
@@ -84,7 +76,6 @@ type StoredData = {
   routines: Routine[];
   expenses: Expense[];
   lifts: Lift[];
-  bodyLogs: BodyLog[];
   wellness: Wellness;
 };
 
@@ -156,7 +147,6 @@ const defaultData: StoredData = {
   routines: initialRoutines,
   expenses: [],
   lifts: [],
-  bodyLogs: [],
   wellness: initialWellness,
 };
 
@@ -169,7 +159,6 @@ function readLocal(): StoredData {
       routines: (parsed.routines?.length ? parsed.routines : initialRoutines).map(normalizeRoutine),
       expenses: parsed.expenses || [],
       lifts: parsed.lifts || [],
-      bodyLogs: parsed.bodyLogs || [],
       wellness: normalizeWellness({ ...initialWellness, ...parsed.wellness, habits: { ...initialWellness.habits, ...parsed.wellness?.habits } }),
     };
   } catch {
@@ -184,7 +173,6 @@ export function useAscendData() {
   const [routines, setRoutines] = useState(local.routines);
   const [expenses, setExpenses] = useState(local.expenses);
   const [lifts, setLifts] = useState(local.lifts);
-  const [bodyLogs, setBodyLogs] = useState(local.bodyLogs);
   const [wellness, setWellness] = useState(local.wellness);
   const [user, setUser] = useState<User | null>(null);
   const [mode, setMode] = useState<"local" | "syncing" | "cloud">(firebaseConfigured ? "syncing" : "local");
@@ -246,13 +234,6 @@ export function useAscendData() {
         await batch.commit();
       }
 
-      const bodyRef = collection(root, "bodyLogs");
-      if ((await getDocs(bodyRef)).empty && bodyLogs.length) {
-        const batch = writeBatch(db);
-        bodyLogs.forEach((item) => batch.set(doc(bodyRef, item.id), item));
-        await batch.commit();
-      }
-
       const settingsRef = doc(root, "settings", "dashboard");
       const settingsSnapshot = await getDoc(settingsRef);
       if (!settingsSnapshot.exists()) await setDoc(settingsRef, wellness);
@@ -271,9 +252,6 @@ export function useAscendData() {
         }),
         onSnapshot(query(liftsRef, orderBy("createdAt", "desc")), (snapshot) => {
           setLifts(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })) as Lift[]);
-        }),
-        onSnapshot(query(bodyRef, orderBy("createdAt", "desc")), (snapshot) => {
-          setBodyLogs(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })) as BodyLog[]);
         }),
         onSnapshot(settingsRef, (snapshot) => {
           if (snapshot.exists()) {
@@ -295,8 +273,8 @@ export function useAscendData() {
   }, [user]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ routines, expenses, lifts, bodyLogs, wellness }));
-  }, [bodyLogs, expenses, lifts, mode, routines, wellness]);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ routines, expenses, lifts, wellness }));
+  }, [expenses, lifts, mode, routines, wellness]);
 
   const rootRef = useCallback(() => (user && firestore ? doc(firestore, "users", user.uid) : null), [user]);
 
@@ -344,19 +322,6 @@ export function useAscendData() {
     const root = rootRef();
     if (root && mode !== "local") await deleteDoc(doc(root, "lifts", id));
     else setLifts((current) => current.filter((item) => item.id !== id));
-  };
-
-  const addBodyLog = async (weight: number, bodyFat?: number, waist?: number) => {
-    const item: BodyLog = { id: makeId(), weight, bodyFat, waist, createdAt: Date.now() };
-    const root = rootRef();
-    if (root && mode !== "local") await setDoc(doc(root, "bodyLogs", item.id), item);
-    else setBodyLogs((current) => [item, ...current]);
-  };
-
-  const deleteBodyLog = async (id: string) => {
-    const root = rootRef();
-    if (root && mode !== "local") await deleteDoc(doc(root, "bodyLogs", id));
-    else setBodyLogs((current) => current.filter((item) => item.id !== id));
   };
 
   const updateWellness = async (changes: Partial<Wellness>) => {
@@ -413,7 +378,6 @@ export function useAscendData() {
     routines,
     expenses,
     lifts,
-    bodyLogs,
     wellness,
     user,
     mode,
@@ -425,8 +389,7 @@ export function useAscendData() {
     deleteExpense,
     addLift,
     deleteLift,
-    addBodyLog,
-    deleteBodyLog,
+    deleteBodyLog: async (_id: string) => undefined,
     updateWellness,
     toggleHabit,
     connectGoogle,

@@ -21,7 +21,8 @@ const money = (value: number) => new Intl.NumberFormat("en-MY", { minimumFractio
 
 export default function HomePage() {
   const data = useAscendData();
-  const { routines, expenses, lifts, bodyLogs, wellness } = data;
+  const { routines, expenses, lifts, wellness } = data;
+  const bodyLogs: Array<{ id: string; weight: number; bodyFat?: number; waist?: number }> = [];
   const [active, setActive] = useState("Command");
   const [expenseInput, setExpenseInput] = useState("");
   const [expenseCategory, setExpenseCategory] = useState<ExpenseCategory>("Food");
@@ -46,7 +47,7 @@ export default function HomePage() {
   const spendData = useMemo(() => Array.from({ length: 7 }, (_, index) => { const day = new Date(); day.setHours(0, 0, 0, 0); day.setDate(day.getDate() - (6 - index)); const end = new Date(day); end.setDate(end.getDate() + 1); return { day: index === 6 ? "Today" : new Intl.DateTimeFormat("en", { weekday: "short" }).format(day), value: expenses.filter((item) => item.createdAt >= day.getTime() && item.createdAt < end.getTime()).reduce((sum, item) => sum + item.amount, 0) }; }), [expenses]);
   const sevenDaySpend = spendData.reduce((sum, item) => sum + item.value, 0);
   const monthSpend = expenses.filter((item) => { const date = new Date(item.createdAt), now = new Date(); return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear(); }).reduce((sum, item) => sum + item.amount, 0);
-  const bodyChart = [...bodyLogs].slice(0, 12).reverse().map((item) => ({ day: new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(new Date(item.createdAt)), weight: item.weight }));
+  const bodyChart: Array<{ day: string; weight: number }> = [];
   const monthlyAvailable = Math.max(0, wellness.monthlyBudget - monthSpend);
   const estimatedSavings = Math.max(0, monthlyAvailable);
   const todaySpend = spendData.at(-1)?.value || 0;
@@ -81,7 +82,7 @@ export default function HomePage() {
   const submitExpense = (event: FormEvent) => { event.preventDefault(); const input = expenseInput.trim(); const match = input.match(/(\d+(?:[.,]\d{1,2})?)(?!.*\d)/); const amount = match ? Number(match[1].replace(",", ".")) : 0; const description = match ? input.replace(match[0], "").replace(/\bRM\b/gi, "").trim() : ""; if (!description || !amount) return setNotice("Try: Lunch 18.50"); void run(() => data.addExpense(description, amount, expenseCategory), "Expense added"); setExpenseInput(""); };
   const submitRoutine = (event: FormEvent) => { event.preventDefault(); if (!routineDraft?.title.trim()) return; const payload = { time: routineDraft.time, title: routineDraft.title.trim(), meta: routineDraft.meta.trim() || "Personal routine block", days: routineDraft.days }; void run(() => routineDraft.id ? data.updateRoutine(routineDraft.id, payload) : data.createRoutine(payload), routineDraft.id ? "Routine updated" : "Routine created"); setRoutineDraft(null); };
   const submitLift = (event: FormEvent) => { event.preventDefault(); const weight = Number(liftDraft.weight), reps = Number(liftDraft.reps); if (!liftDraft.exercise.trim() || weight <= 0 || reps <= 0) return setNotice("Enter a valid exercise, weight and reps."); void run(() => data.addLift(liftDraft.exercise.trim(), weight, reps), "Workout set logged"); };
-  const submitBody = (event: FormEvent) => { event.preventDefault(); const weight = Number(bodyDraft.weight), bodyFat = Number(bodyDraft.bodyFat), waist = Number(bodyDraft.waist); if (!weight) return setNotice("Enter your weight first."); void run(() => data.addBodyLog(weight, bodyFat || undefined, waist || undefined), "Body check-in saved"); setBodyDraft({ weight: "", bodyFat: "", waist: "" }); };
+  const submitBody = (event: FormEvent) => { event.preventDefault(); setNotice("Body check-ins have been removed from Ascend OS."); };
   const editRoutine = (item: Routine) => setRoutineDraft({ id: item.id, time: item.time, title: item.title, meta: item.meta, days: item.days || [0, 1, 2, 3, 4, 5, 6] });
 
   return <div className={`ascend-app min-h-screen bg-[#070a0f] text-slate-100 selection:bg-emerald-400/30 ${lightMode ? "ascend-light" : "ascend-dark"}`}>
