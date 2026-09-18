@@ -6,9 +6,25 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == userId;
     }
 
+    function validSubscription() {
+      let item = request.resource.data;
+      return item.keys().hasOnly(['id', 'name', 'amount', 'billingDay', 'category', 'active', 'createdAt'])
+        && item.id is string
+        && item.name is string && item.name.size() > 0 && item.name.size() <= 60
+        && (item.amount is int || item.amount is float) && item.amount > 0 && item.amount <= 1000000
+        && item.billingDay is int && item.billingDay >= 1 && item.billingDay <= 31
+        && item.category is string && item.category.size() <= 30
+        && item.active is bool
+        && item.createdAt is int;
+    }
+
     match /users/{userId}/routines/{routineId} { allow read, write: if isOwner(userId); }
     match /users/{userId}/expenses/{expenseId} { allow read, write: if isOwner(userId); }
     match /users/{userId}/lifts/{liftId} { allow read, write: if isOwner(userId); }
+    match /users/{userId}/subscriptions/{subscriptionId} {
+      allow read, delete: if isOwner(userId);
+      allow create, update: if isOwner(userId) && validSubscription();
+    }
     match /users/{userId}/settings/dashboard { allow read, write: if isOwner(userId); }
   }
 }

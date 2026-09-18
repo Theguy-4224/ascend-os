@@ -42,6 +42,16 @@ export type Expense = {
 
 export type ExpenseCategory = "Food" | "Transport" | "Bills" | "Shopping" | "Health" | "Fun" | "Other";
 
+export type Subscription = {
+  id: string;
+  name: string;
+  amount: number;
+  billingDay: number;
+  category: string;
+  active: boolean;
+  createdAt: number;
+};
+
 export type Lift = {
   id: string;
   exercise: string;
@@ -52,6 +62,7 @@ export type Lift = {
 
 export type HabitKey = "training" | "deepWork" | "noSpend";
 export type Habit = { streak: number; completedToday: boolean; lastCompletedDate?: string | null };
+export type DashboardCardKey = "money" | "next" | "progress" | "momentum";
 
 export type Wellness = {
   trackedOn: string;
@@ -70,12 +81,16 @@ export type Wellness = {
   monthlyBudget: number;
   savingsGoal: number;
   habits: Record<HabitKey, Habit>;
+  dashboardCards: Record<DashboardCardKey, boolean>;
+  weeklyReviewNote: string;
+  weeklyReviewWeek: string;
 };
 
 type StoredData = {
   routines: Routine[];
   expenses: Expense[];
   lifts: Lift[];
+  subscriptions: Subscription[];
   wellness: Wellness;
 };
 
@@ -95,12 +110,16 @@ const normalizeRoutine = (routine: Routine): Routine => ({
   done: routine.completedOn ? routine.completedOn === today : routine.done,
 });
 
-const normalizeWellness = (value: Wellness): Wellness => ({
+const normalizeWellness = (value: Wellness): Wellness => {
+  const legacyGlassTracking = value.waterGoal <= 50;
+  const isNewDay = Boolean(value.trackedOn && value.trackedOn !== today);
+  return {
   ...value,
-  ...(value.trackedOn && value.trackedOn !== today ? {
+  water: isNewDay ? 0 : legacyGlassTracking ? value.water * 250 : value.water,
+  waterGoal: legacyGlassTracking ? Math.max(250, value.waterGoal * 250) : value.waterGoal,
+  ...(isNewDay ? {
     trackedOn: today,
     protein: 0,
-    water: 0,
     note: "",
     skinMorning: false,
     skinNight: false,
@@ -111,7 +130,8 @@ const normalizeWellness = (value: Wellness): Wellness => ({
       completedToday: habit.lastCompletedDate ? habit.lastCompletedDate === today : habit.completedToday,
     }]),
   ) as Wellness["habits"],
-});
+};
+};
 
 export const initialRoutines: Routine[] = [
   { id: "morning", time: "06:30", title: "Morning activation", meta: "Hydrate · sunlight · mobility", done: true, completedOn: today, days: [0, 1, 2, 3, 4, 5, 6] },
@@ -126,8 +146,8 @@ export const initialWellness: Wellness = {
   allowance: 127,
   protein: 118,
   proteinGoal: 160,
-  water: 6,
-  waterGoal: 8,
+  water: 1500,
+  waterGoal: 2500,
   note: "",
   skinMorning: true,
   skinNight: false,
@@ -136,6 +156,9 @@ export const initialWellness: Wellness = {
   theme: "dark",
   monthlyBudget: 1800,
   savingsGoal: 600,
+  weeklyReviewNote: "",
+  weeklyReviewWeek: "",
+  dashboardCards: { money: true, next: true, progress: true, momentum: true },
   habits: {
     training: { streak: 18, completedToday: false, lastCompletedDate: null },
     deepWork: { streak: 12, completedToday: true, lastCompletedDate: today },
@@ -147,6 +170,7 @@ const defaultData: StoredData = {
   routines: initialRoutines,
   expenses: [],
   lifts: [],
+  subscriptions: [],
   wellness: initialWellness,
 };
 
@@ -159,7 +183,8 @@ function readLocal(): StoredData {
       routines: (parsed.routines?.length ? parsed.routines : initialRoutines).map(normalizeRoutine),
       expenses: parsed.expenses || [],
       lifts: parsed.lifts || [],
-      wellness: normalizeWellness({ ...initialWellness, ...parsed.wellness, habits: { ...initialWellness.habits, ...parsed.wellness?.habits } }),
+      subscriptions: parsed.subscriptions || [],
+      wellness: normalizeWellness({ ...initialWellness, ...parsed.wellness, habits: { ...initialWellness.habits, ...parsed.wellness?.habits }, dashboardCards: { ...initialWellness.dashboardCards, ...parsed.wellness?.dashboardCards } }),
     };
   } catch {
     return defaultData;
@@ -173,6 +198,7 @@ export function useAscendData() {
   const [routines, setRoutines] = useState(local.routines);
   const [expenses, setExpenses] = useState(local.expenses);
   const [lifts, setLifts] = useState(local.lifts);
+  const [subscriptions, setSubscriptions] = useState(local.subscriptions);
   const [wellness, setWellness] = useState(local.wellness);
   const [user, setUser] = useState<User | null>(null);
   const [mode, setMode] = useState<"local" | "syncing" | "cloud">(firebaseConfigured ? "syncing" : "local");
@@ -234,6 +260,13 @@ export function useAscendData() {
         await batch.commit();
       }
 
+      const subscriptionsRef = collection(root, "subscriptions");
+      if ((await getDocs(subscriptionsRef)).empty && subscriptions.length) {
+        const batch = writeBatch(db);
+        subscriptions.forEach((item) => batch.set(doc(subscriptionsRef, item.id), item));
+        await batch.commit();
+      }
+
       const settingsRef = doc(root, "settings", "dashboard");
       const settingsSnapshot = await getDoc(settingsRef);
       if (!settingsSnapshot.exists()) await setDoc(settingsRef, wellness);
@@ -253,10 +286,13 @@ export function useAscendData() {
         onSnapshot(query(liftsRef, orderBy("createdAt", "desc")), (snapshot) => {
           setLifts(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })) as Lift[]);
         }),
+        onSnapshot(query(subscriptionsRef, orderBy("billingDay")), (snapshot) => {
+          setSubscriptions(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })) as Subscription[]);
+        }),
         onSnapshot(settingsRef, (snapshot) => {
           if (snapshot.exists()) {
             const next = snapshot.data() as Partial<Wellness>;
-            setWellness((current) => normalizeWellness({ ...current, ...next, habits: { ...current.habits, ...next.habits } }));
+            setWellness((current) => normalizeWellness({ ...current, ...next, habits: { ...current.habits, ...next.habits }, dashboardCards: { ...current.dashboardCards, ...next.dashboardCards } }));
           }
         }),
       );
@@ -273,8 +309,8 @@ export function useAscendData() {
   }, [user]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ routines, expenses, lifts, wellness }));
-  }, [expenses, lifts, mode, routines, wellness]);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ routines, expenses, lifts, subscriptions, wellness }));
+  }, [expenses, lifts, mode, routines, subscriptions, wellness]);
 
   const rootRef = useCallback(() => (user && firestore ? doc(firestore, "users", user.uid) : null), [user]);
 
@@ -322,6 +358,25 @@ export function useAscendData() {
     const root = rootRef();
     if (root && mode !== "local") await deleteDoc(doc(root, "lifts", id));
     else setLifts((current) => current.filter((item) => item.id !== id));
+  };
+
+  const addSubscription = async (input: Omit<Subscription, "id" | "createdAt">) => {
+    const item: Subscription = { ...input, id: makeId(), createdAt: Date.now() };
+    const root = rootRef();
+    if (root && mode !== "local") await setDoc(doc(root, "subscriptions", item.id), item);
+    else setSubscriptions((current) => [...current, item].sort((a, b) => a.billingDay - b.billingDay));
+  };
+
+  const updateSubscription = async (id: string, changes: Partial<Omit<Subscription, "id" | "createdAt">>) => {
+    const root = rootRef();
+    if (root && mode !== "local") await setDoc(doc(root, "subscriptions", id), changes, { merge: true });
+    else setSubscriptions((current) => current.map((item) => item.id === id ? { ...item, ...changes } : item).sort((a, b) => a.billingDay - b.billingDay));
+  };
+
+  const deleteSubscription = async (id: string) => {
+    const root = rootRef();
+    if (root && mode !== "local") await deleteDoc(doc(root, "subscriptions", id));
+    else setSubscriptions((current) => current.filter((item) => item.id !== id));
   };
 
   const updateWellness = async (changes: Partial<Wellness>) => {
@@ -378,6 +433,7 @@ export function useAscendData() {
     routines,
     expenses,
     lifts,
+    subscriptions,
     wellness,
     user,
     mode,
@@ -389,7 +445,9 @@ export function useAscendData() {
     deleteExpense,
     addLift,
     deleteLift,
-    deleteBodyLog: async (_id: string) => undefined,
+    addSubscription,
+    updateSubscription,
+    deleteSubscription,
     updateWellness,
     toggleHabit,
     connectGoogle,
