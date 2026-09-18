@@ -1,0 +1,16 @@
+{
+  "name": "Ascend OS",
+  "short_name": "Ascend OS",
+  "description": "Your personal command center.",
+  "start_url": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait-primary",
+  "background_color": "#070a0f",
+  "theme_color": "#070a0f",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }],
+  "shortcuts": [
+    { "name": "Add expense", "url": "/#wealth" },
+    { "name": "Today’s plan", "url": "/#blueprint" }
+  ]
+}

@@ -21,6 +21,6 @@
       "@/*": ["./*"]
     }
   },
-  "include": ["src", "app/page.tsx", "components/ui/checkbox.tsx", "hooks/use-ascend-data.ts", "lib", "vite.config.ts"],
+  "include": ["src", "app/page.tsx", "components/ui/checkbox.tsx", "hooks/use-ascend-data.ts", "hooks/use-notifications.ts", "lib", "vite.config.ts"],
   "exclude": ["node_modules", "dist"]
 }

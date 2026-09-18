@@ -29,6 +29,7 @@ export type Routine = {
   meta: string;
   done: boolean;
   completedOn?: string | null;
+  days?: number[];
 };
 
 export type Expense = {
@@ -36,13 +37,24 @@ export type Expense = {
   description: string;
   amount: number;
   createdAt: number;
+  category?: ExpenseCategory;
 };
+
+export type ExpenseCategory = "Food" | "Transport" | "Bills" | "Shopping" | "Health" | "Fun" | "Other";
 
 export type Lift = {
   id: string;
   exercise: string;
   weight: number;
   reps: number;
+  createdAt: number;
+};
+
+export type BodyLog = {
+  id: string;
+  weight: number;
+  bodyFat?: number;
+  waist?: number;
   createdAt: number;
 };
 
@@ -59,6 +71,12 @@ export type Wellness = {
   note: string;
   skinMorning: boolean;
   skinNight: boolean;
+  notificationsEnabled: boolean;
+  notificationSound: boolean;
+  pushToken?: string;
+  theme?: "dark" | "light";
+  monthlyBudget: number;
+  savingsGoal: number;
   habits: Record<HabitKey, Habit>;
 };
 
@@ -66,6 +84,7 @@ type StoredData = {
   routines: Routine[];
   expenses: Expense[];
   lifts: Lift[];
+  bodyLogs: BodyLog[];
   wellness: Wellness;
 };
 
@@ -81,6 +100,7 @@ const dateKey = (date = new Date()) => {
 const today = dateKey();
 const normalizeRoutine = (routine: Routine): Routine => ({
   ...routine,
+  days: routine.days?.length ? routine.days : [0, 1, 2, 3, 4, 5, 6],
   done: routine.completedOn ? routine.completedOn === today : routine.done,
 });
 
@@ -103,11 +123,11 @@ const normalizeWellness = (value: Wellness): Wellness => ({
 });
 
 export const initialRoutines: Routine[] = [
-  { id: "morning", time: "06:30", title: "Morning activation", meta: "Hydrate · sunlight · mobility", done: true, completedOn: today },
-  { id: "deep-work", time: "07:15", title: "Deep work block", meta: "90 minutes · priority one", done: true, completedOn: today },
-  { id: "fuel", time: "12:30", title: "Fuel & reset", meta: "Protein lunch · 10 min walk", done: false, completedOn: null },
-  { id: "training", time: "17:45", title: "Upper body strength", meta: "Push focus · progressive overload", done: false, completedOn: null },
-  { id: "shutdown", time: "21:30", title: "Night shutdown", meta: "Skincare · reflect · prepare", done: false, completedOn: null },
+  { id: "morning", time: "06:30", title: "Morning activation", meta: "Hydrate · sunlight · mobility", done: true, completedOn: today, days: [0, 1, 2, 3, 4, 5, 6] },
+  { id: "deep-work", time: "07:15", title: "Deep work block", meta: "90 minutes · priority one", done: true, completedOn: today, days: [1, 2, 3, 4, 5] },
+  { id: "fuel", time: "12:30", title: "Fuel & reset", meta: "Protein lunch · 10 min walk", done: false, completedOn: null, days: [0, 1, 2, 3, 4, 5, 6] },
+  { id: "training", time: "17:45", title: "Upper body strength", meta: "Push focus · progressive overload", done: false, completedOn: null, days: [1, 2, 4, 5, 6] },
+  { id: "shutdown", time: "21:30", title: "Night shutdown", meta: "Skincare · reflect · prepare", done: false, completedOn: null, days: [0, 1, 2, 3, 4, 5, 6] },
 ];
 
 export const initialWellness: Wellness = {
@@ -120,6 +140,11 @@ export const initialWellness: Wellness = {
   note: "",
   skinMorning: true,
   skinNight: false,
+  notificationsEnabled: false,
+  notificationSound: true,
+  theme: "dark",
+  monthlyBudget: 1800,
+  savingsGoal: 600,
   habits: {
     training: { streak: 18, completedToday: false, lastCompletedDate: null },
     deepWork: { streak: 12, completedToday: true, lastCompletedDate: today },
@@ -131,6 +156,7 @@ const defaultData: StoredData = {
   routines: initialRoutines,
   expenses: [],
   lifts: [],
+  bodyLogs: [],
   wellness: initialWellness,
 };
 
@@ -143,6 +169,7 @@ function readLocal(): StoredData {
       routines: (parsed.routines?.length ? parsed.routines : initialRoutines).map(normalizeRoutine),
       expenses: parsed.expenses || [],
       lifts: parsed.lifts || [],
+      bodyLogs: parsed.bodyLogs || [],
       wellness: normalizeWellness({ ...initialWellness, ...parsed.wellness, habits: { ...initialWellness.habits, ...parsed.wellness?.habits } }),
     };
   } catch {
@@ -157,6 +184,7 @@ export function useAscendData() {
   const [routines, setRoutines] = useState(local.routines);
   const [expenses, setExpenses] = useState(local.expenses);
   const [lifts, setLifts] = useState(local.lifts);
+  const [bodyLogs, setBodyLogs] = useState(local.bodyLogs);
   const [wellness, setWellness] = useState(local.wellness);
   const [user, setUser] = useState<User | null>(null);
   const [mode, setMode] = useState<"local" | "syncing" | "cloud">(firebaseConfigured ? "syncing" : "local");
@@ -218,6 +246,13 @@ export function useAscendData() {
         await batch.commit();
       }
 
+      const bodyRef = collection(root, "bodyLogs");
+      if ((await getDocs(bodyRef)).empty && bodyLogs.length) {
+        const batch = writeBatch(db);
+        bodyLogs.forEach((item) => batch.set(doc(bodyRef, item.id), item));
+        await batch.commit();
+      }
+
       const settingsRef = doc(root, "settings", "dashboard");
       const settingsSnapshot = await getDoc(settingsRef);
       if (!settingsSnapshot.exists()) await setDoc(settingsRef, wellness);
@@ -236,6 +271,9 @@ export function useAscendData() {
         }),
         onSnapshot(query(liftsRef, orderBy("createdAt", "desc")), (snapshot) => {
           setLifts(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })) as Lift[]);
+        }),
+        onSnapshot(query(bodyRef, orderBy("createdAt", "desc")), (snapshot) => {
+          setBodyLogs(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })) as BodyLog[]);
         }),
         onSnapshot(settingsRef, (snapshot) => {
           if (snapshot.exists()) {
@@ -257,8 +295,8 @@ export function useAscendData() {
   }, [user]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ routines, expenses, lifts, wellness }));
-  }, [expenses, lifts, mode, routines, wellness]);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ routines, expenses, lifts, bodyLogs, wellness }));
+  }, [bodyLogs, expenses, lifts, mode, routines, wellness]);
 
   const rootRef = useCallback(() => (user && firestore ? doc(firestore, "users", user.uid) : null), [user]);
 
@@ -282,8 +320,8 @@ export function useAscendData() {
     else setRoutines((current) => current.filter((item) => item.id !== id));
   };
 
-  const addExpense = async (description: string, amount: number) => {
-    const item: Expense = { id: makeId(), description, amount, createdAt: Date.now() };
+  const addExpense = async (description: string, amount: number, category: ExpenseCategory = "Other") => {
+    const item: Expense = { id: makeId(), description, amount, category, createdAt: Date.now() };
     const root = rootRef();
     if (root && mode !== "local") await setDoc(doc(root, "expenses", item.id), item);
     else setExpenses((current) => [item, ...current]);
@@ -306,6 +344,19 @@ export function useAscendData() {
     const root = rootRef();
     if (root && mode !== "local") await deleteDoc(doc(root, "lifts", id));
     else setLifts((current) => current.filter((item) => item.id !== id));
+  };
+
+  const addBodyLog = async (weight: number, bodyFat?: number, waist?: number) => {
+    const item: BodyLog = { id: makeId(), weight, bodyFat, waist, createdAt: Date.now() };
+    const root = rootRef();
+    if (root && mode !== "local") await setDoc(doc(root, "bodyLogs", item.id), item);
+    else setBodyLogs((current) => [item, ...current]);
+  };
+
+  const deleteBodyLog = async (id: string) => {
+    const root = rootRef();
+    if (root && mode !== "local") await deleteDoc(doc(root, "bodyLogs", id));
+    else setBodyLogs((current) => current.filter((item) => item.id !== id));
   };
 
   const updateWellness = async (changes: Partial<Wellness>) => {
@@ -362,6 +413,7 @@ export function useAscendData() {
     routines,
     expenses,
     lifts,
+    bodyLogs,
     wellness,
     user,
     mode,
@@ -373,6 +425,8 @@ export function useAscendData() {
     deleteExpense,
     addLift,
     deleteLift,
+    addBodyLog,
+    deleteBodyLog,
     updateWellness,
     toggleHabit,
     connectGoogle,
